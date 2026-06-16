@@ -32,6 +32,12 @@ jobs:
           # Windows amd64
           GOOS=windows GOARCH=amd64 go build -ldflags="-s -w" -o dist/float-mtr-plugin-windows-amd64.exe main.go
 
+          # macOS Intel (amd64)
+          GOOS=darwin GOARCH=amd64 go build -ldflags="-s -w" -o dist/float-mtr-plugin-darwin-amd64 main.go
+          
+          # macOS Apple Silicon (arm64)
+          GOOS=darwin GOARCH=arm64 go build -ldflags="-s -w" -o dist/float-mtr-plugin-darwin-arm64 main.go
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         if: startsWith(github.ref, 'refs/tags/')
@@ -40,5 +46,7 @@ jobs:
             dist/float-mtr-plugin-linux-amd64
             dist/float-mtr-plugin-linux-arm64
             dist/float-mtr-plugin-windows-amd64.exe
+            dist/float-mtr-plugin-darwin-amd64
+            dist/float-mtr-plugin-darwin-arm64
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
