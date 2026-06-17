@@ -103,11 +103,11 @@ func main() {
 			break
 		}
 
-		if isIPv4 {
-			ipv4.NewPacketConn(conn).SetTTL(ttl)
-		} else {
-			ipv6.NewPacketConn(conn).SetHopLimit(ttl)
-		}
+        if isIPv4 {
+            conn.IPv4PacketConn().SetTTL(ttl)
+        } else {
+            conn.IPv6PacketConn().SetHopLimit(ttl)
+        }
 
 		hop := HopResult{
 			Count: ttl,
