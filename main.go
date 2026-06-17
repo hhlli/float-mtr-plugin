@@ -238,11 +238,13 @@ func main() {
 
 func checkRawSocketPermission(isIPv4 bool) error {
 	network := "ip4:icmp"
+	listenAddr := "0.0.0.0"
 	if !isIPv4 {
 		network = "ip6:ipv6-icmp"
+		listenAddr = "::"
 	}
 
-	conn, err := net.ListenPacket(network, "0.0.0.0")
+	conn, err := net.ListenPacket(network, listenAddr)
 	if err != nil {
 		errStr := strings.ToLower(err.Error())
 
