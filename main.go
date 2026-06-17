@@ -44,7 +44,8 @@ const (
 
 func main() {
 	targetFlag := flag.String("target", "", "MTR Target IP or Domain")
-	countFlag := flag.Int("count", 10, "Packets per hop")
+	// 修正：将默认发包数降为 5，防止遇到连续黑洞路由时触发全局 45 秒超时
+	countFlag := flag.Int("count", 5, "Packets per hop")
 	timeoutFlag := flag.Int("timeout", 45, "Max execution time")
 	flag.Parse()
 
@@ -61,7 +62,6 @@ func main() {
 
 	isIPv4 := ipAddr.IP.To4() != nil
 
-	// 执行前置系统权限探测
 	if err := checkRawSocketPermission(isIPv4); err != nil {
 		outputError(err.Error())
 		return
@@ -103,11 +103,11 @@ func main() {
 			break
 		}
 
-        if isIPv4 {
-            conn.IPv4PacketConn().SetTTL(ttl)
-        } else {
-            conn.IPv6PacketConn().SetHopLimit(ttl)
-        }
+		if isIPv4 {
+			conn.IPv4PacketConn().SetTTL(ttl)
+		} else {
+			conn.IPv6PacketConn().SetHopLimit(ttl)
+		}
 
 		hop := HopResult{
 			Count: ttl,
@@ -147,41 +147,54 @@ func main() {
 			}
 
 			reply := make([]byte, 1500)
-			conn.SetReadDeadline(time.Now().Add(ReadTimeout))
-			n, peer, err := conn.ReadFrom(reply)
-			rtt := time.Since(start).Seconds() * 1000
-
+			matched := false
 			currentSeq := seq
 			seq++
 
-			if err != nil {
-				continue
-			}
+			// 修正：增加过滤循环，排空背景干扰包，直到读取到正确的返回包或超时
+			for {
+				elapsed := time.Since(start)
+				if elapsed >= ReadTimeout {
+					break
+				}
+				conn.SetReadDeadline(time.Now().Add(ReadTimeout - elapsed))
+				n, peer, err := conn.ReadFrom(reply)
+				if err != nil {
+					break
+				}
 
-			rm, err := icmp.ParseMessage(protocol, reply[:n])
-			if err != nil {
-				continue
-			}
+				rtt := time.Since(start).Seconds() * 1000
+				rm, err := icmp.ParseMessage(protocol, reply[:n])
+				if err != nil {
+					continue
+				}
 
-			switch rm.Type {
-			case ipv4.ICMPTypeTimeExceeded, ipv6.ICMPTypeTimeExceeded:
-				if te, ok := rm.Body.(*icmp.TimeExceeded); ok {
-					if validateNestedICMP(te.Data, pid, currentSeq, isIPv4) {
-						currentHost = peer.String()
-						recvCount++
-						rtts = append(rtts, rtt)
-						hop.Last = rtt
+				switch rm.Type {
+				case ipv4.ICMPTypeTimeExceeded, ipv6.ICMPTypeTimeExceeded:
+					if te, ok := rm.Body.(*icmp.TimeExceeded); ok {
+						if validateNestedICMP(te.Data, pid, currentSeq, isIPv4) {
+							currentHost = peer.String()
+							recvCount++
+							rtts = append(rtts, rtt)
+							hop.Last = rtt
+							matched = true
+						}
+					}
+				case ipv4.ICMPTypeEchoReply, ipv6.ICMPTypeEchoReply:
+					if pkt, ok := rm.Body.(*icmp.Echo); ok {
+						if pkt.ID == pid && pkt.Seq == currentSeq {
+							currentHost = peer.String()
+							recvCount++
+							rtts = append(rtts, rtt)
+							hop.Last = rtt
+							targetReached = true
+							matched = true
+						}
 					}
 				}
-			case ipv4.ICMPTypeEchoReply, ipv6.ICMPTypeEchoReply:
-				if pkt, ok := rm.Body.(*icmp.Echo); ok {
-					if pkt.ID == pid && pkt.Seq == currentSeq {
-						currentHost = peer.String()
-						recvCount++
-						rtts = append(rtts, rtt)
-						hop.Last = rtt
-						targetReached = true
-					}
+
+				if matched {
+					break
 				}
 			}
 		}
@@ -238,7 +251,7 @@ func checkRawSocketPermission(isIPv4 bool) error {
 			strings.Contains(errStr, "forbidden by its access permissions") {
 
 			if runtime.GOOS == "windows" {
-				return fmt.Errorf("系统权限拒绝: 需要以 Administrator 身份运行探针进程")
+				return fmt.Errorf("系统权限拒绝: 需要以 Administrator 身份运行")
 			}
 
 			exePath, _ := os.Executable()
@@ -283,5 +296,6 @@ func outputError(msg string) {
 	}
 	b, _ := json.Marshal(out)
 	fmt.Println(string(b))
-	os.Exit(1)
+	// 修正：变更为 0。确保探针端能正常读取标准 JSON 报错，而不是捕获 Exit 1 导致数据丢失。
+	os.Exit(0) 
 }
