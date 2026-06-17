@@ -39,7 +39,7 @@ type PluginOutput struct {
 
 const (
 	MaxHops     = 30
-	ReadTimeout = 1500 * time.Millisecond
+	ReadTimeout = 500 * time.Millisecond
 )
 
 func main() {
@@ -122,7 +122,9 @@ func main() {
 
 		for i := 0; i < *countFlag; i++ {
 			if ctx.Err() != nil {
-				outputError("Execution global timeout")
+				output.Error = "探测超时，部分链路数据已截断"
+				finalJSON, _ := json.Marshal(output)
+				fmt.Println(string(finalJSON))
 				return
 			}
 
